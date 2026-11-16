@@ -1,0 +1,9 @@
+## Interface: 30300
+## Title: CatQuest335 |cff88ff88RUS Voice 1-60|r
+## Notes: Russkaya ozvuchka questov 1-60 dlya 3.3.5a. Free TTS, QuestID-based.
+## Author: fan project, inspired by CatQuest
+## Version: 0.1.0-prototype
+## SavedVariables: CatQuest335DB
+## OptionalDeps: QuestGuru, Carbonite
+core.lua
+manifest.lua

@@ -1,0 +1,8 @@
+# Войс-паки и выгрузки не коммитим — они тяжелые и содержат тексты Blizzard.
+# Храни их в GitHub Releases, как CatQuest.
+addon/CatQuest335_Voices/
+data/
+*.mp3
+*.wav
+*.onnx
+__pycache__/
