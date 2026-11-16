@@ -2,16 +2,16 @@
 
 Фан-проект по мотивам CatQuest (Forever), но для старого клиента 3.3.5а и бесплатного синтеза.
 
-Принцип: тексты берутся из **твоей базы AzerothCore**, синтезируются локально (бесплатно, Piper/Silero/XTTS),
+Принцип: тексты берутся из **твоей базы AzerothCore**, синтезируются локально (бесплатно, Vosk TTS: 57 дикторов, голос по полу NPC),
 раскладываются по `QuestID`, аддон в `Interface/AddOns` проигрывает их при взятии/сдаче квеста.
 
 Состав:
 - `exporter/` — выгрузка текстов из AzerothCore (quest_template + локали, npc_text, page_text)
 - `tools/` — чистка текста, ударения, генерация манифеста для аддона
-- `tts/` — бесплатный синтез (Piper ru_RU по умолчанию)
+- `tts/` — бесплатный синтез: Vosk TTS (основной), Piper (запасной)
 - `addon/CatQuest335/` — сам аддон под интерфейс 30300
 
-Статус: прототип. Генерирует озвучку для любых квестов 1-60, очередь, субтитры, кнопки Читать/Стоп.
+Статус: прототип. Озвучка взятия и сдачи квестов 1-60 (с учётом пола персонажа), окно с портретом NPC и таймером, кнопки Читать/Повтор/Стоп.
 
 ## Быстрый старт (прототип 10 квестов)
 
@@ -21,37 +21,72 @@ pip install mysql-connector-python num2words
 python exporter/export_quests.py --host 127.0.0.1 --user acore --password acore --db acore_world --locale ruRU --min-level 1 --max-level 60 --limit 10 --out data/quests_ru.json
 ```
 
-2. Нормализуй + сделай манифест:
+2. Нормализуй (плейсхолдеры `$N`, `$B`, `$Gмуж:жен;` → мужской и женский варианты):
 ```bash
 python tools/normalize.py --in data/quests_ru.json --out data/quests_ru.clean.json
-python tools/make_manifest.py --in data/quests_ru.clean.json --out addon/CatQuest335/manifest.lua
 ```
 
-3. Синтезируй бесплатно (Piper):
+3. Синтезируй бесплатно (Vosk TTS). Один раз — окружение и модель (~830 МБ):
 ```bash
-pip install -r tts/requirements.txt
-python tts/synthesize_piper.py --in data/quests_ru.clean.json --out addon/CatQuest335_Voices --voice irina
+python -m venv tts/.venv
+tts/.venv/Scripts/python -m pip install vosk-tts
+```
+Скачай https://alphacephei.com/vosk/models/vosk-model-tts-ru-0.10-multi.zip и распакуй в `tts/models/`. Затем:
+```bash
+tts/.venv/Scripts/python tts/synthesize_vosk.py --in data/quests_ru.clean.json --out addon/CatQuest335_Voices
+```
+Голос выбирается по полу NPC: описание читает тот, кто выдаёт квест, сдачу — тот, кто принимает.
+У одного NPC всегда один и тот же голос. Доски объявлений и предметы читает рассказчик.
+- послушать все 57 голосов: `--samples --out tts/samples`; сравнить разборчивость и высоту: `tts/rate_voices.py tts/samples`
+- поменять голоса: `--male 20,28 --female 2,5 --narrator 10`; темп: `--rate 1.1`
+- дописать недостающее без пересинтеза готового: `--skip-existing`; только описания: `--kinds desc,desc_f`
+
+Запасной вариант без отдельной модели — Piper, один голос: `python tts/synthesize_piper.py --in ... --out ...`
+
+4. Собери манифест — **после** синтеза (в него попадают только реально существующие mp3 и их длительность):
+```bash
+python tools/make_manifest.py --in data/quests_ru.clean.json --voices addon/CatQuest335_Voices --out addon/CatQuest335/manifest.lua
 ```
 
-4. Поставь в клиент:
+5. Поставь в клиент:
 ```
 WoW 3.3.5/Interface/AddOns/CatQuest335/
-WoW 3.3.5/Interface/AddOns/CatQuest335_Voices/   # сгенерированные mp3 + manifest
+WoW 3.3.5/Interface/AddOns/CatQuest335_Voices/   # сгенерированные mp3
 ```
-Удали `Cache/`, включи «Устаревшие модификации», проверь `/cq selftest`.
+Полностью перезапусти игру (не `/reload`), включи «Устаревшие модификации», проверь `/cq selftest` и `/cq test`.
 
-Подробно — см. `docs/` ниже и комменты в скриптах.
+### Файлы озвучки
+- `<questID>_desc.mp3` — описание при взятии квеста, `<questID>_comp.mp3` — реплика NPC в окне награды
+- `_desc_f` / `_comp_f` — варианты для женского персонажа (только там, где текст отличается)
 
-## Про GitHub
+### Как аддон находит квест
+В 3.3.5 нет `GetQuestID()`, поэтому квест ищется по названию окна. При сдаче точный ID берётся из журнала квестов.
+При взятии, если название у нескольких квестов одинаковое (Альянс/Орда, классовые), выбирается подходящий
+по NPC-собеседнику (entry из GUID), затем по расе и классу персонажа, затем по началу текста цели. `/cq debug` показывает кандидатов и выбор.
 
-Этот проект уже git-репозиторий. Чтобы залить на свой GitHub:
+### Ограничения клиента 3.3.5
+- Звук `PlaySoundFile` остановить нельзя, поэтому голос играет через музыкальный канал (`PlayMusic`/`StopMusic`).
+  На время реплики музыка зоны молчит; громкость голоса — `/cq vol 80`, настройки музыки потом возвращаются.
+- `PlayMusic` зацикливает файл, поэтому в конце каждого mp3 есть 0.6 с тишины, а конец реплики аддон
+  определяет по длительности из манифеста.
+
+Подробности — в комментариях в скриптах.
+
+## В игре
+
+- Реплика запускается сама при взятии и сдаче квеста; если что-то уже звучит — встаёт в очередь.
+- Окно: лицо собеседника, название, таймер, кнопки «Далее» (пропустить), «Повтор», «Стоп»; кнопка «Читать» в окне квеста.
+- `/cq vol 80` — громкость голоса, `/cq auto off` — без автозапуска, `/cq queue off` — новая реплика прерывает текущую,
+  `/cq notify off` — не сообщать о квестах без озвучки, `/cq debug` — как определился квест, `/cq selftest`.
+
+## Проверка без игры
+
 ```bash
-cd CatQuest335
-git remote add origin https://github.com/ТВОЙ_НИК/ТВОЕ_РЕПО.git
-git branch -M main
-git push -u origin main
+tts/.venv/Scripts/python -m pip install lupa
+tts/.venv/Scripts/python tests/sim_addon.py
 ```
-Никаких токенов мне присылать не надо — пуш делается с твоего ПК.
+Запускает настоящие `core.lua` и `manifest.lua` в LuaJIT с заглушками API клиента 3.3.5 и проверяет автозапуск,
+очередь, «Повтор»/«Далее»/«Стоп» и возврат настроек музыки.
 
 ## Дисклеймер
 

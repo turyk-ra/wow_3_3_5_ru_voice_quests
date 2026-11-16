@@ -6,3 +6,12 @@ data/
 *.wav
 *.onnx
 __pycache__/
+_old_broken_voices/
+_old_installed/
+tts/.venv/
+tts/models/
+tts/samples/
+_old_piper_voices/
+addon/CatQuest335_Voices_vosk/
+tests/__pycache__/
+*.onnx.json
